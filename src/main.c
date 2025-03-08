@@ -10,12 +10,12 @@
 #include "stm32f4xx_gpio.h"    // GPIO configuration
 #include "stm32f4xx_rcc.h"     // Clock configuration
 #include "misc.h"              // NVIC configuration
+#include "stm32_ub_uart.h"
+//#include "stm32_hal_usart.h"
 
 // Macros
 #define f_tell(fp)		((fp)->fptr)
 #define BUTTON			(GPIOA->IDR & GPIO_Pin_0)
-#define UART_RX_BUFFER_SIZE 64
-uint16_t counter = 0;
 
 // Variables
 volatile uint32_t		time_var1, time_var2;
@@ -34,7 +34,8 @@ volatile int			bytes_left;
 char					*read_ptr;
 
 // Variables for UART command reception
-char uartCmdBuffer[UART_RX_BUFFER_SIZE];
+UART_RXSTATUS_t  check;
+UART_RX_t UART_RX[UART_ANZ];
 volatile uint16_t uartCmdIndex = 0;
 volatile uint8_t uartCmdComplete = 0;
 
@@ -44,41 +45,6 @@ static uint32_t Mp3ReadId3V2Tag(FIL* pInFile, char* pszArtist,
 		uint32_t unArtistSize, char* pszTitle, uint32_t unTitleSize);
 static void play_mp3(char* filename);
 static FRESULT play_directory (const char* path, unsigned char seek);
-
-// UART5 interrupt handler using the standard peripheral library
-void UART5_IRQHandler(void) {
-    if (USART_GetITStatus(UART5, USART_IT_RXNE) != RESET) {
-        uint16_t data = USART_ReceiveData(UART5);  // Read received data
-        uint8_t receivedChar = data & 0xFF;          // Mask to 8 bits
-        if (uartCmdIndex < (UART_RX_BUFFER_SIZE - 1)) {
-            uartCmdBuffer[uartCmdIndex] = (char)receivedChar; // Store at current index
-            uartCmdIndex++;  // Then increment index
-            if ((char)receivedChar == '\n' || (char)receivedChar == '\r') {
-                uartCmdComplete = 1;  // Mark command complete if newline or carriage return is received
-            }
-        } else {
-            // Buffer overflow: reset index and optionally clear the buffer
-            uartCmdIndex = 0;
-            memset(uartCmdBuffer, 0, sizeof(uartCmdBuffer));
-        }
-    }
-}
-
-// Process received UART command
-void ProcessUARTCommand(void) {
-    if (uartCmdComplete) {
-        uartCmdBuffer[uartCmdIndex] = '\0'; // Null-terminate command
-        // Check if command starts with "VOL:"
-        if (strncmp(uartCmdBuffer, "VOL:", 4) == 0) {
-            int newVolume = atoi(uartCmdBuffer + 4);
-            // Optionally, add bounds checking for newVolume here
-            SetAudioVolume((uint16_t)newVolume);
-        }
-        uartCmdIndex = 0;
-        uartCmdComplete = 0;
-        memset(uartCmdBuffer, 0, sizeof(uartCmdBuffer));
-    }
-}
 
 // Configure USART2 for asynchronous reception using StdPeriph Library
 // Configure UART5 for asynchronous reception (using register style)
@@ -129,7 +95,42 @@ void UART5_Config(void) {
 
     // Enable UART5
     USART_Cmd(UART5, ENABLE);
+
+    UART_RX[0].rx_buffer[0]=RX_END_CHR;
+    UART_RX[0].wr_ptr=0;
+    UART_RX[0].rd_ptr=0;
+    UART_RX[0].status=RX_EMPTY;
 }
+
+// Process received UART command
+void ProcessUARTCommand(void) {
+	  check = UB_Uart_ReceiveString(COM2, UART_RX->rx_buffer);
+	  if(check == RX_READY) {
+		  if (strncmp((char*)UART_RX, "VOL:", 4) == 0)
+			{
+				int newVolume = atoi((char*)UART_RX->rx_buffer + 4);  // Extract volume value
+
+				// Ensure volume is within a valid range (adjust limits as needed)
+				if (newVolume >= 0 && newVolume <= 255)
+				{
+					SetAudioVolume((uint16_t)newVolume);
+				}
+			}
+	  }
+    //if (uartCmdComplete) {
+        //uartCmdBuffer[uartCmdIndex] = '\0'; // Null-terminate command
+        // Check if command starts with "VOL:"
+        //if (strncmp(uartCmdBuffer, "VOL:", 4) == 0) {
+        //    int newVolume = atoi(uartCmdBuffer + 4);
+            // Optionally, add bounds checking for newVolume here
+        //    SetAudioVolume((uint16_t)newVolume);
+        //}
+        //uartCmdIndex = 0;
+        //uartCmdComplete = 0;
+        //memset(uartCmdBuffer, 0, sizeof(uartCmdBuffer));
+    //}
+}
+
 /*
  * Main function. Called when startup code is done with
  * copying memory and setting up clocks.

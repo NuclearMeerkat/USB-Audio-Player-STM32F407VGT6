@@ -7,6 +7,9 @@ SRCS += Audio.c
 # USB
 SRCS += usbh_usr.c usb_bsp.c
 
+#UART
+SRCS += stm32_ub_uart.c
+
 # Project name
 PROJ_NAME=stm32F4_usb_mp3
 OUTPATH=build
