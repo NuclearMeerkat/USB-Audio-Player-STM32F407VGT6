@@ -75,7 +75,7 @@ void UART5_Config(void) {
     GPIO_PinAFConfig(GPIOD, GPIO_PinSource2, GPIO_AF_UART5);
 
     // Configure UART5 parameters: 9600 baud, 8-bit data, 1 stop bit, no parity
-    USART_InitStructure.USART_BaudRate = 115200;
+    USART_InitStructure.USART_BaudRate = 9600;
     USART_InitStructure.USART_WordLength = USART_WordLength_8b;
     USART_InitStructure.USART_StopBits = USART_StopBits_1;
     USART_InitStructure.USART_Parity = USART_Parity_No;
@@ -106,7 +106,7 @@ void UART5_Config(void) {
 void ProcessUARTCommand(void) {
 	  check = UB_Uart_ReceiveString(COM2, UART_RX->rx_buffer);
 	  if(check == RX_READY) {
-		  if (strncmp((char*)UART_RX, "VOL:", 4) == 0)
+		  if (strncmp((char*)UART_RX->rx_buffer, "VOL:", 4) == 0)
 			{
 				int newVolume = atoi((char*)UART_RX->rx_buffer + 4);  // Extract volume value
 
@@ -115,20 +115,14 @@ void ProcessUARTCommand(void) {
 				{
 					SetAudioVolume((uint16_t)newVolume);
 				}
+				memset(UART_RX[0].rx_buffer, 0, sizeof(UART_RX[0].rx_buffer));
+
+			    UART_RX[0].rx_buffer[0]=RX_END_CHR;
+			    UART_RX[0].wr_ptr=0;
+			    UART_RX[0].rd_ptr=0;
+			    UART_RX[0].status=RX_EMPTY;
 			}
 	  }
-    //if (uartCmdComplete) {
-        //uartCmdBuffer[uartCmdIndex] = '\0'; // Null-terminate command
-        // Check if command starts with "VOL:"
-        //if (strncmp(uartCmdBuffer, "VOL:", 4) == 0) {
-        //    int newVolume = atoi(uartCmdBuffer + 4);
-            // Optionally, add bounds checking for newVolume here
-        //    SetAudioVolume((uint16_t)newVolume);
-        //}
-        //uartCmdIndex = 0;
-        //uartCmdComplete = 0;
-        //memset(uartCmdBuffer, 0, sizeof(uartCmdBuffer));
-    //}
 }
 
 /*
@@ -157,7 +151,8 @@ int main(void) {
 	USBH_Init(&USB_OTG_Core, USB_OTG_FS_CORE_ID, &USB_Host, &USBH_MSC_cb, &USR_Callbacks);
 
 	// Configure USART2 using standard peripheral library functions
-	UART5_Config();
+	UB_Uart_Init();
+	//UART5_Config();
 
 	for(;;) {
 		USBH_Process(&USB_OTG_Core, &USB_Host);
@@ -283,7 +278,7 @@ static void play_mp3(char* filename) {
 					StopAudio();
 
 					// Re-initialize and set volume to avoid noise
-					InitializeAudio(Audio44100HzSettings);
+					InitializeAudio(Audio48000HzSettings);
 					SetAudioVolume(0);
 
 					// Close currently open file

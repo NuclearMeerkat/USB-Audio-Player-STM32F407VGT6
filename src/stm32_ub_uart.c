@@ -41,17 +41,17 @@
 //UART_t UART;
 
 UART_t UART[] = {
-// Name, Clock               , AF-UART      ,UART  , Baud , Interrupt
-  {COM2,RCC_APB1Periph_UART5,GPIO_AF_UART5,UART5,115200,UART5_IRQn, // UART2 �� ��������� 115200 ���
-// PORT , PIN      , Clock              , Source
-  {GPIOC,GPIO_Pin_12,RCC_AHB1Periph_GPIOC,GPIO_PinSource12},  // TX �� PA2
-  {GPIOD,GPIO_Pin_2,RCC_AHB1Periph_GPIOD,GPIO_PinSource2}}, // RX �� PA3
+		// Name, Clock               , AF-UART      ,UART  , Baud , Interrupt
+		  {COM2,RCC_APB1Periph_USART2,GPIO_AF_USART2,USART2,115200,USART2_IRQn, // UART2 со скоростью 115200 бод
+		// PORT , PIN      , Clock              , Source
+		  {GPIOA,GPIO_Pin_2,RCC_AHB1Periph_GPIOA,GPIO_PinSource2},  // TX на PA2
+		  {GPIOA,GPIO_Pin_3,RCC_AHB1Periph_GPIOA,GPIO_PinSource3}}, // RX на PA3
 
-// Name, Clock               , AF-UART      ,UART  , Baud, Interrupt
-  {COM3,RCC_APB1Periph_USART3,GPIO_AF_USART3,USART3,115200,USART3_IRQn, // UART3 �� ��������� 115200 ���
-// PORT , PIN      , Clock              , Source
-  {GPIOD,GPIO_Pin_8,RCC_AHB1Periph_GPIOD,GPIO_PinSource8},  // TX �� PD8
-  {GPIOD,GPIO_Pin_9,RCC_AHB1Periph_GPIOD,GPIO_PinSource9}}, // RX �� PD9
+		// Name, Clock               , AF-UART      ,UART  , Baud, Interrupt
+		  {COM3,RCC_APB1Periph_USART3,GPIO_AF_USART3,USART3,115200,USART3_IRQn, // UART3 со скоростью 115200 бод
+		// PORT , PIN      , Clock              , Source
+		  {GPIOD,GPIO_Pin_8,RCC_AHB1Periph_GPIOD,GPIO_PinSource8},  // TX на PD8
+		  {GPIOD,GPIO_Pin_9,RCC_AHB1Periph_GPIOD,GPIO_PinSource9}}, // RX на PD9
 };
 
 
@@ -289,7 +289,6 @@ void P_UART_RX_INT(uint8_t int_nr, uint16_t wert)
   }
 }
 
-
 //--------------------------------------------------------------
 // UART1-����������
 //--------------------------------------------------------------
@@ -317,8 +316,6 @@ void USART2_IRQHandler(void) {
     P_UART_RX_INT(USART2_IRQn,wert);
   }
 }
-
-
 //--------------------------------------------------------------
 // UART3-����������
 //--------------------------------------------------------------
