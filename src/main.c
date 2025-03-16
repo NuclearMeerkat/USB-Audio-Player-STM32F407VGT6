@@ -1,3 +1,5 @@
+#define ARM_MATH_CM4
+
 #include "main.h"
 #include "core_cm4.h"
 #include "stm32f4xx_conf.h"
@@ -10,8 +12,8 @@
 #include "stm32f4xx_gpio.h"    // GPIO configuration
 #include "stm32f4xx_rcc.h"     // Clock configuration
 #include "misc.h"              // NVIC configuration
-#include "stm32_ub_uart.h"
-//#include "stm32_hal_usart.h"
+#include "stm32_ub_uart.h"     // UART lib
+#include "arm_math.h"
 
 // Macros
 #define f_tell(fp)		((fp)->fptr)
@@ -39,68 +41,82 @@ UART_RX_t UART_RX[UART_ANZ];
 volatile uint16_t uartCmdIndex = 0;
 volatile uint8_t uartCmdComplete = 0;
 
+// IRR filter
+#define BLOCK_SIZE_FLOAT 2304
+
+arm_biquad_casd_df1_inst_f32 filter60Hz_settings;
+arm_biquad_casd_df1_inst_f32 filter170Hz_settings;
+arm_biquad_casd_df1_inst_f32 filter350Hz_settings;
+arm_biquad_casd_df1_inst_f32 filter1000Hz_settings;
+arm_biquad_casd_df1_inst_f32 filter3500Hz_settings;
+arm_biquad_casd_df1_inst_f32 filter10000Hz_settings;
+
+float filter60Hz_state [4];
+float filter170Hz_state [4];
+float filter350Hz_state [4];
+float filter1000Hz_state [4];
+float filter3500Hz_state [4];
+float filter10000Hz_state [4];
+
+// REVERS 2 LAST SETTINGS!!!
+
+// -10
+float filter60Hz_coefs [5] = {
+		0.9953066925387944f,
+		-1.9785807925620864f,
+		0.9833463973228215f,
+		1.978502629144255f,
+		-0.978731253279448f
+};
+// -5
+float filter170Hz_coefs [5] = {
+		0.9943049831526733f,
+		-1.9545547672989163f,
+		0.9608232458483684f,
+		1.9543316105813113f,
+		-0.9553513857186469f
+};
+// -5
+float filter350Hz_coefs [5] = {
+		0.9883156865826839f,
+		-1.9069608295631226f,
+		0.9210185959129932f,
+		1.906037224789071f,
+		-0.9102578872697289f
+};
+// +10
+float filter1000Hz_coefs [5] = {
+		1.080968292566556f,
+		-1.7791861633846875f,
+		0.7564543569181826f,
+		1.7990964094846682f,
+		-0.817512403384758f
+};
+// -5
+float filter3500Hz_coefs [5] = {
+		0.8930974185177668f,
+		-1.1722479703379898f,
+		0.4417000925925752f,
+		1.1089934899907876f,
+		-0.398051991457544f
+};
+// -5
+float filter10000Hz_coefs [5] = {
+		0.7502282171046981f,
+		-0.12847012300253685f,
+		0.13261136424009284f,
+		-0.16508498549245873f,
+		-0.17639468983978665f
+};
+
+float buf_in [BLOCK_SIZE_FLOAT]; // 2304
+
 // Private function prototypes
 static void AudioCallback(void *context,int buffer);
 static uint32_t Mp3ReadId3V2Tag(FIL* pInFile, char* pszArtist,
 		uint32_t unArtistSize, char* pszTitle, uint32_t unTitleSize);
 static void play_mp3(char* filename);
 static FRESULT play_directory (const char* path, unsigned char seek);
-
-// Configure USART2 for asynchronous reception using StdPeriph Library
-// Configure UART5 for asynchronous reception (using register style)
-void UART5_Config(void) {
-    USART_InitTypeDef USART_InitStructure;
-    GPIO_InitTypeDef GPIO_InitStructure;
-    NVIC_InitTypeDef NVIC_InitStructure;
-
-    // Enable clocks for UART5, GPIOC and GPIOD
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_UART5, ENABLE);
-    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);
-    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);
-
-    // Configure PC12 as UART5_TX (Alternate Function)
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_12;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
-    GPIO_Init(GPIOC, &GPIO_InitStructure);
-
-    // Configure PD2 as UART5_RX (Alternate Function)
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2;
-    GPIO_Init(GPIOD, &GPIO_InitStructure);
-
-    // Connect PC12 and PD2 to UART5's alternate function (usually AF8 for UART5)
-    GPIO_PinAFConfig(GPIOC, GPIO_PinSource12, GPIO_AF_UART5);
-    GPIO_PinAFConfig(GPIOD, GPIO_PinSource2, GPIO_AF_UART5);
-
-    // Configure UART5 parameters: 9600 baud, 8-bit data, 1 stop bit, no parity
-    USART_InitStructure.USART_BaudRate = 9600;
-    USART_InitStructure.USART_WordLength = USART_WordLength_8b;
-    USART_InitStructure.USART_StopBits = USART_StopBits_1;
-    USART_InitStructure.USART_Parity = USART_Parity_No;
-    USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
-    USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
-    USART_Init(UART5, &USART_InitStructure);
-
-    // Enable the UART5 Receive interrupt
-    USART_ITConfig(UART5, USART_IT_RXNE, ENABLE);
-
-    // Configure NVIC for UART5 interrupts
-    NVIC_InitStructure.NVIC_IRQChannel = UART5_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-    NVIC_Init(&NVIC_InitStructure);
-
-    // Enable UART5
-    USART_Cmd(UART5, ENABLE);
-
-    UART_RX[0].rx_buffer[0]=RX_END_CHR;
-    UART_RX[0].wr_ptr=0;
-    UART_RX[0].rd_ptr=0;
-    UART_RX[0].status=RX_EMPTY;
-}
 
 // Process received UART command
 void ProcessUARTCommand(void) {
@@ -130,8 +146,15 @@ void ProcessUARTCommand(void) {
  * copying memory and setting up clocks.
  */
 int main(void) {
-	GPIO_InitTypeDef  GPIO_InitStructure;
+	// Intitialize the filters settings
+	arm_biquad_cascade_df1_init_f32(&filter60Hz_settings, 1, &filter1000Hz_coefs[0], &filter60Hz_state[0]);
+	arm_biquad_cascade_df1_init_f32(&filter170Hz_settings, 1, &filter170Hz_coefs[0], &filter170Hz_state[0]);
+	arm_biquad_cascade_df1_init_f32(&filter350Hz_settings, 1, &filter350Hz_coefs[0], &filter350Hz_state[0]);
+	arm_biquad_cascade_df1_init_f32(&filter1000Hz_settings, 1, &filter1000Hz_coefs[0], &filter1000Hz_state[0]);
+	arm_biquad_cascade_df1_init_f32(&filter3500Hz_settings, 1, &filter3500Hz_coefs[0], &filter3500Hz_state[0]);
+	arm_biquad_cascade_df1_init_f32(&filter10000Hz_settings, 1, &filter10000Hz_coefs[0], &filter10000Hz_state[0]);
 
+	GPIO_InitTypeDef  GPIO_InitStructure;
 	// SysTick interrupt each 1ms
 	RCC_GetClocksFreq(&RCC_Clocks);
 	SysTick_Config(RCC_Clocks.HCLK_Frequency / 1000);
@@ -152,7 +175,6 @@ int main(void) {
 
 	// Configure USART2 using standard peripheral library functions
 	UB_Uart_Init();
-	//UART5_Config();
 
 	for(;;) {
 		USBH_Process(&USB_OTG_Core, &USB_Host);
@@ -278,7 +300,7 @@ static void play_mp3(char* filename) {
 					StopAudio();
 
 					// Re-initialize and set volume to avoid noise
-					InitializeAudio(Audio48000HzSettings);
+					InitializeAudio(Audio44100HzSettings);
 					SetAudioVolume(0);
 
 					// Close currently open file
@@ -302,9 +324,9 @@ static void play_mp3(char* filename) {
  * provided to the audio driver.
  */
 static void AudioCallback(void *context, int buffer) {
-	static int16_t audio_buffer0[4096];
-	static int16_t audio_buffer1[4096];
-
+	static int16_t audio_buffer0[2304];
+	static int16_t audio_buffer1[2304];
+// 4096
 	int offset, err;
 	int outOfData = 0;
 
@@ -352,8 +374,26 @@ static void AudioCallback(void *context, int buffer) {
 			mp3FrameInfo.outputSamps *= 2;
 		}
 	}
-
 	if (!outOfData) {
+		// Converting all samples to float
+		for (int i = 0; i < BLOCK_SIZE_FLOAT; i++) {
+			buf_in[i] = (float)samples[i];
+		}
+
+		arm_biquad_cascade_df1_f32(&filter60Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
+		arm_biquad_cascade_df1_f32(&filter170Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
+		arm_biquad_cascade_df1_f32(&filter350Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
+		//arm_biquad_cascade_df1_f32(&filter1000Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
+		arm_biquad_cascade_df1_f32(&filter3500Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
+		arm_biquad_cascade_df1_f32(&filter10000Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
+
+
+		// Converting samples back to int
+		for (int i = 0; i < BLOCK_SIZE_FLOAT; i++) {
+			samples[i] = (int)buf_in[i];
+		}
+
+		// Send buffer to codec for playing
 		ProvideAudioBuffer(samples, mp3FrameInfo.outputSamps);
 	}
 }
