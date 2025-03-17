@@ -306,16 +306,16 @@ void USART1_IRQHandler(void) {
 //--------------------------------------------------------------
 // UART2-����������
 //--------------------------------------------------------------
-void USART2_IRQHandler(void) {
-  uint16_t wert;
+//void USART2_IRQHandler(void) {
+//  uint16_t wert;
 
-  if (USART_GetITStatus(USART2, USART_IT_RXNE) == SET) {
+//  if (USART_GetITStatus(USART2, USART_IT_RXNE) == SET) {
     // ���� ���� � ������ ������ ����
-        wert=USART_ReceiveData(USART2);
+//        wert=USART_ReceiveData(USART2);
     // ��������� ����
-    P_UART_RX_INT(USART2_IRQn,wert);
-  }
-}
+//    P_UART_RX_INT(USART2_IRQn,wert);
+//  }
+//}
 //--------------------------------------------------------------
 // UART3-����������
 //--------------------------------------------------------------

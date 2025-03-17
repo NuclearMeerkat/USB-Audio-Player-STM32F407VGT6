@@ -41,6 +41,26 @@ UART_RX_t UART_RX[UART_ANZ];
 volatile uint16_t uartCmdIndex = 0;
 volatile uint8_t uartCmdComplete = 0;
 
+// Define packet sizes and header values
+#define VOL_PACKET_SIZE    5
+#define COEF_PACKET_SIZE   25
+#define PACKET_HEADER1     0xAA
+#define PACKET_HEADER2     0x55
+
+// Command IDs
+#define CMD_VOLUME 0x01
+#define CMD_COEF   0x02
+
+// Global buffer for incoming packet
+#define MAX_PACKET_SIZE  25  // Maximum packet size we expect
+volatile uint8_t uartPacketBuffer[MAX_PACKET_SIZE];
+volatile uint8_t packetIndex = 0;
+volatile uint8_t packetComplete = 0;
+
+// Function prototypes
+void processUARTPacket(void);
+void updateFilterCoefficients(uint8_t filterID, float coef[5]);
+
 // IRR filter
 #define BLOCK_SIZE_FLOAT 2304
 
@@ -60,53 +80,47 @@ float filter10000Hz_state [4];
 
 // REVERS 2 LAST SETTINGS!!!
 
-// -10
 float filter60Hz_coefs [5] = {
-		0.9953066925387944f,
-		-1.9785807925620864f,
-		0.9833463973228215f,
-		1.978502629144255f,
-		-0.978731253279448f
+		1.0f,
+		0.0f,
+		0.0f,
+		0.0f,
+		0.0f
 };
-// -5
 float filter170Hz_coefs [5] = {
-		0.9943049831526733f,
-		-1.9545547672989163f,
-		0.9608232458483684f,
-		1.9543316105813113f,
-		-0.9553513857186469f
+		1.0f,
+		0.0f,
+		0.0f,
+		0.0f,
+		0.0f
 };
-// -5
 float filter350Hz_coefs [5] = {
-		0.9883156865826839f,
-		-1.9069608295631226f,
-		0.9210185959129932f,
-		1.906037224789071f,
-		-0.9102578872697289f
+		1.0f,
+		0.0f,
+		0.0f,
+		0.0f,
+		0.0f
 };
-// +10
 float filter1000Hz_coefs [5] = {
-		1.080968292566556f,
-		-1.7791861633846875f,
-		0.7564543569181826f,
-		1.7990964094846682f,
-		-0.817512403384758f
+		1.0f,
+		0.0f,
+		0.0f,
+		0.0f,
+		0.0f
 };
-// -5
 float filter3500Hz_coefs [5] = {
-		0.8930974185177668f,
-		-1.1722479703379898f,
-		0.4417000925925752f,
-		1.1089934899907876f,
-		-0.398051991457544f
+		1.0f,
+		0.0f,
+		0.0f,
+		0.0f,
+		0.0f
 };
-// -5
 float filter10000Hz_coefs [5] = {
-		0.7502282171046981f,
-		-0.12847012300253685f,
-		0.13261136424009284f,
-		-0.16508498549245873f,
-		-0.17639468983978665f
+		1.0f,
+		0.0f,
+		0.0f,
+		0.0f,
+		0.0f
 };
 
 float buf_in [BLOCK_SIZE_FLOAT]; // 2304
@@ -118,27 +132,111 @@ static uint32_t Mp3ReadId3V2Tag(FIL* pInFile, char* pszArtist,
 static void play_mp3(char* filename);
 static FRESULT play_directory (const char* path, unsigned char seek);
 
-// Process received UART command
-void ProcessUARTCommand(void) {
-	  check = UB_Uart_ReceiveString(COM2, UART_RX->rx_buffer);
-	  if(check == RX_READY) {
-		  if (strncmp((char*)UART_RX->rx_buffer, "VOL:", 4) == 0)
-			{
-				int newVolume = atoi((char*)UART_RX->rx_buffer + 4);  // Extract volume value
+void USART2_IRQHandler(void) {
+    if (USART_GetITStatus(USART2, USART_IT_RXNE) == SET) {
+        // Read received data (only lower 8 bits are valid)
+        uint16_t data = USART_ReceiveData(USART2);
+        uint8_t receivedByte = data & 0xFF;
 
-				// Ensure volume is within a valid range (adjust limits as needed)
-				if (newVolume >= 0 && newVolume <= 255)
-				{
-					SetAudioVolume((uint16_t)newVolume);
-				}
-				memset(UART_RX[0].rx_buffer, 0, sizeof(UART_RX[0].rx_buffer));
+        // Accumulate byte in the packet buffer if there's room
+        if (packetIndex < MAX_PACKET_SIZE) {
+            uartPacketBuffer[packetIndex++] = receivedByte;
 
-			    UART_RX[0].rx_buffer[0]=RX_END_CHR;
-			    UART_RX[0].wr_ptr=0;
-			    UART_RX[0].rd_ptr=0;
-			    UART_RX[0].status=RX_EMPTY;
-			}
-	  }
+            // If we detect a complete packet based on the expected size,
+            // you might choose to check the command ID to decide the expected length.
+            // For simplicity, let's say we check header first:
+            if (packetIndex >= 3) {
+                // Check header to determine packet type
+                if (uartPacketBuffer[0] != PACKET_HEADER1 || uartPacketBuffer[1] != PACKET_HEADER2) {
+                    // Invalid header, reset buffer
+                    packetIndex = 0;
+                    memset((void*)uartPacketBuffer, 0, MAX_PACKET_SIZE);
+                    return;
+                }
+                // Now, use command ID (byte 2) to decide expected packet size
+                if (uartPacketBuffer[2] == CMD_VOLUME && packetIndex >= VOL_PACKET_SIZE) {
+                    packetComplete = 1;
+                } else if (uartPacketBuffer[2] == CMD_COEF && packetIndex >= COEF_PACKET_SIZE) {
+                    packetComplete = 1;
+                }
+            }
+        } else {
+            // Buffer overflow: reset
+            packetIndex = 0;
+            memset((void*)uartPacketBuffer, 0, MAX_PACKET_SIZE);
+        }
+    }
+}
+
+// Function to compute checksum: simple sum modulo 256
+uint8_t calculateChecksum(const uint8_t *data, uint8_t len) {
+    uint16_t sum = 0;
+    for (uint8_t i = 0; i < len; i++) {
+        sum += data[i];
+    }
+    return (uint8_t)(sum & 0xFF);
+}
+
+// Process a complete packet
+void processUARTPacket(void) {
+    if (!packetComplete)
+        return;
+
+    // Determine packet type based on command ID (byte 2)
+    uint8_t cmdID = uartPacketBuffer[2];
+    if (cmdID == CMD_VOLUME && packetIndex == VOL_PACKET_SIZE) {
+        // Verify checksum for volume packet
+        uint8_t checksum = calculateChecksum(uartPacketBuffer, VOL_PACKET_SIZE - 1);
+        if (checksum == uartPacketBuffer[VOL_PACKET_SIZE - 1]) {
+            uint8_t volume = uartPacketBuffer[3];
+            SetAudioVolume((uint16_t)volume);
+        }
+    }
+    else if (cmdID == CMD_COEF && packetIndex == COEF_PACKET_SIZE) {
+        // Verify checksum for coefficient packet
+        uint8_t checksum = calculateChecksum(uartPacketBuffer, COEF_PACKET_SIZE - 1);
+        if (checksum == uartPacketBuffer[COEF_PACKET_SIZE - 1]) {
+            uint8_t filterID = uartPacketBuffer[3];
+            float coef[5];
+            for (int i = 0; i < 5; i++) {
+                union {
+                    float f;
+                    uint8_t bytes[4];
+                } converter;
+                memcpy(converter.bytes, &uartPacketBuffer[4 + i * 4], 4);
+                coef[i] = converter.f;
+            }
+            // Call a function to update the corresponding filter with these coefficients
+            updateFilterCoefficients(filterID, coef);
+        }
+    }
+
+    // Reset buffer after processing
+    packetIndex = 0;
+    packetComplete = 0;
+    memset((void*)uartPacketBuffer, 0, MAX_PACKET_SIZE);
+}
+
+// Example function: update filter coefficients for a given filter ID
+void updateFilterCoefficients(uint8_t filterID, float coef[5]) {
+    // Array of pointers to the coefficient arrays for each frequency band.
+    float* filterCoeffsArray[6] = {
+        filter60Hz_coefs,
+        filter170Hz_coefs,
+        filter350Hz_coefs,
+        filter1000Hz_coefs,
+        filter3500Hz_coefs,
+        filter10000Hz_coefs
+    };
+
+    // Ensure filterID is within range.
+    if (filterID < 6) {
+        float* target = filterCoeffsArray[filterID];
+        for (int i = 0; i < 5; i++) {
+            // Invert the sign for feedback coefficients (i > 2), keep the others as is.
+            target[i] = (i > 2) ? -coef[i] : coef[i];
+        }
+    }
 }
 
 /*
@@ -147,7 +245,7 @@ void ProcessUARTCommand(void) {
  */
 int main(void) {
 	// Intitialize the filters settings
-	arm_biquad_cascade_df1_init_f32(&filter60Hz_settings, 1, &filter1000Hz_coefs[0], &filter60Hz_state[0]);
+	arm_biquad_cascade_df1_init_f32(&filter60Hz_settings, 1, &filter60Hz_coefs[0], &filter60Hz_state[0]);
 	arm_biquad_cascade_df1_init_f32(&filter170Hz_settings, 1, &filter170Hz_coefs[0], &filter170Hz_state[0]);
 	arm_biquad_cascade_df1_init_f32(&filter350Hz_settings, 1, &filter350Hz_coefs[0], &filter350Hz_state[0]);
 	arm_biquad_cascade_df1_init_f32(&filter1000Hz_settings, 1, &filter1000Hz_coefs[0], &filter1000Hz_state[0]);
@@ -279,7 +377,8 @@ static void play_mp3(char* filename) {
 			 */
 
 			// Process received UART commands asynchronously
-			ProcessUARTCommand();
+			processUARTPacket();
+			//ProcessUARTCommand();
 
 			if (bytes_left < (FILE_READ_BUFFER_SIZE / 2)) {
 				// Copy rest of data to beginning of read buffer
@@ -383,7 +482,7 @@ static void AudioCallback(void *context, int buffer) {
 		arm_biquad_cascade_df1_f32(&filter60Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
 		arm_biquad_cascade_df1_f32(&filter170Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
 		arm_biquad_cascade_df1_f32(&filter350Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
-		//arm_biquad_cascade_df1_f32(&filter1000Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
+		arm_biquad_cascade_df1_f32(&filter1000Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
 		arm_biquad_cascade_df1_f32(&filter3500Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
 		arm_biquad_cascade_df1_f32(&filter10000Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
 
