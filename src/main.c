@@ -14,6 +14,7 @@
 #include "misc.h"              // NVIC configuration
 #include "stm32_ub_uart.h"     // UART lib
 #include "arm_math.h"
+#include "arm_stereo.h"
 
 // Macros
 #define f_tell(fp)		((fp)->fptr)
@@ -53,7 +54,7 @@ volatile uint8_t uartCmdComplete = 0;
 
 // Global buffer for incoming packet
 #define MAX_PACKET_SIZE  25  // Maximum packet size we expect
-volatile uint8_t uartPacketBuffer[MAX_PACKET_SIZE];
+volatile uint8_t uartPacketBuffer[MAX_PACKET_SIZE * 3];
 volatile uint8_t packetIndex = 0;
 volatile uint8_t packetComplete = 0;
 
@@ -61,40 +62,60 @@ volatile uint8_t packetComplete = 0;
 void processUARTPacket(void);
 void updateFilterCoefficients(uint8_t filterID, float coef[5]);
 
-// IRR filter
+// Biquad filter
 #define BLOCK_SIZE_FLOAT 2304
 
-arm_biquad_casd_df1_inst_f32 filter60Hz_settings;
-arm_biquad_casd_df1_inst_f32 filter170Hz_settings;
-arm_biquad_casd_df1_inst_f32 filter350Hz_settings;
+arm_biquad_casd_df1_inst_f32 filter32Hz_settings;
+arm_biquad_casd_df1_inst_f32 filter64Hz_settings;
+arm_biquad_casd_df1_inst_f32 filter125Hz_settings;
+arm_biquad_casd_df1_inst_f32 filter250Hz_settings;
+arm_biquad_casd_df1_inst_f32 filter500Hz_settings;
 arm_biquad_casd_df1_inst_f32 filter1000Hz_settings;
-arm_biquad_casd_df1_inst_f32 filter3500Hz_settings;
-arm_biquad_casd_df1_inst_f32 filter10000Hz_settings;
+arm_biquad_casd_df1_inst_f32 filter2000Hz_settings;
+arm_biquad_casd_df1_inst_f32 filter4000Hz_settings;
+arm_biquad_casd_df1_inst_f32 filter8000Hz_settings;
+arm_biquad_casd_df1_inst_f32 filter16000Hz_settings;
 
-float filter60Hz_state [4];
-float filter170Hz_state [4];
-float filter350Hz_state [4];
+float filter32Hz_state [4];
+float filter64Hz_state [4];
+float filter125Hz_state [4];
+float filter250Hz_state [4];
+float filter500Hz_state [4];
 float filter1000Hz_state [4];
-float filter3500Hz_state [4];
-float filter10000Hz_state [4];
+float filter2000Hz_state [4];
+float filter4000Hz_state [4];
+float filter8000Hz_state [4];
+float filter16000Hz_state [4];
 
-// REVERS 2 LAST SETTINGS!!!
-
-float filter60Hz_coefs [5] = {
+float filter32Hz_coefs [5] = {
 		1.0f,
 		0.0f,
 		0.0f,
 		0.0f,
 		0.0f
 };
-float filter170Hz_coefs [5] = {
+float filter64Hz_coefs [5] = {
 		1.0f,
 		0.0f,
 		0.0f,
 		0.0f,
 		0.0f
 };
-float filter350Hz_coefs [5] = {
+float filter125Hz_coefs [5] = {
+		1.0f,
+		0.0f,
+		0.0f,
+		0.0f,
+		0.0f
+};
+float filter250Hz_coefs [5] = {
+		1.0f,
+		0.0f,
+		0.0f,
+		0.0f,
+		0.0f
+};
+float filter500Hz_coefs [5] = {
 		1.0f,
 		0.0f,
 		0.0f,
@@ -108,14 +129,28 @@ float filter1000Hz_coefs [5] = {
 		0.0f,
 		0.0f
 };
-float filter3500Hz_coefs [5] = {
+float filter2000Hz_coefs [5] = {
 		1.0f,
 		0.0f,
 		0.0f,
 		0.0f,
 		0.0f
 };
-float filter10000Hz_coefs [5] = {
+float filter4000Hz_coefs [5] = {
+		1.0f,
+		0.0f,
+		0.0f,
+		0.0f,
+		0.0f
+};
+float filter8000Hz_coefs [5] = {
+		1.0f,
+		0.0f,
+		0.0f,
+		0.0f,
+		0.0f
+};
+float filter16000Hz_coefs [5] = {
 		1.0f,
 		0.0f,
 		0.0f,
@@ -189,7 +224,8 @@ void processUARTPacket(void) {
         uint8_t checksum = calculateChecksum(uartPacketBuffer, VOL_PACKET_SIZE - 1);
         if (checksum == uartPacketBuffer[VOL_PACKET_SIZE - 1]) {
             uint8_t volume = uartPacketBuffer[3];
-            SetAudioVolume((uint16_t)volume);
+            int volume16_t = ((int)volume) + 155;
+            SetAudioVolume(volume16_t);
         }
     }
     else if (cmdID == CMD_COEF && packetIndex == COEF_PACKET_SIZE) {
@@ -220,17 +256,21 @@ void processUARTPacket(void) {
 // Example function: update filter coefficients for a given filter ID
 void updateFilterCoefficients(uint8_t filterID, float coef[5]) {
     // Array of pointers to the coefficient arrays for each frequency band.
-    float* filterCoeffsArray[6] = {
-        filter60Hz_coefs,
-        filter170Hz_coefs,
-        filter350Hz_coefs,
+    float* filterCoeffsArray[10] = {
+        filter32Hz_coefs,
+        filter64Hz_coefs,
+        filter125Hz_coefs,
+		filter250Hz_coefs,
+        filter500Hz_coefs,
         filter1000Hz_coefs,
-        filter3500Hz_coefs,
-        filter10000Hz_coefs
+        filter2000Hz_coefs,
+		filter4000Hz_coefs,
+		filter8000Hz_coefs,
+		filter16000Hz_coefs
     };
 
     // Ensure filterID is within range.
-    if (filterID < 6) {
+    if (filterID < 10) {
         float* target = filterCoeffsArray[filterID];
         for (int i = 0; i < 5; i++) {
             // Invert the sign for feedback coefficients (i > 2), keep the others as is.
@@ -239,23 +279,64 @@ void updateFilterCoefficients(uint8_t filterID, float coef[5]) {
     }
 }
 
+void SystemClock_Config(void)
+{
+    // Step 1: Reset RCC settings to default
+    RCC_DeInit();
+
+    // Step 2: Enable High-Speed External (HSE) oscillator
+    RCC_HSEConfig(RCC_HSE_ON);
+
+    // Wait for HSE to stabilize
+    if (RCC_WaitForHSEStartUp() == SUCCESS)
+    {
+        // Step 3: Configure the PLL
+        RCC_PLLConfig(RCC_PLLSource_HSE, 8, 336, 2, 7);
+
+        // Step 4: Enable the PLL
+        RCC_PLLCmd(ENABLE);
+
+        // Wait for PLL to lock
+        while (RCC_GetFlagStatus(RCC_FLAG_PLLRDY) == RESET);
+
+        // Step 5: Set system clock source to PLL
+        RCC_SYSCLKConfig(RCC_SYSCLKSource_PLLCLK);
+
+        // Step 6: Configure the AHB, APB1, and APB2 prescalers
+        RCC_HCLKConfig(RCC_SYSCLK_Div1);      // AHB = 168 MHz
+        RCC_PCLK1Config(RCC_HCLK_Div4);        // APB1 = 42 MHz
+        RCC_PCLK2Config(RCC_HCLK_Div2);        // APB2 = 84 MHz
+
+        // Step 7: Enable the Flash prefetch buffer and set latency
+        FLASH_SetLatency(FLASH_Latency_5);
+        FLASH_PrefetchBufferCmd(ENABLE);
+    }
+}
+
 /*
  * Main function. Called when startup code is done with
  * copying memory and setting up clocks.
  */
 int main(void) {
+	SystemClock_Config();
+
 	// Intitialize the filters settings
-	arm_biquad_cascade_df1_init_f32(&filter60Hz_settings, 1, &filter60Hz_coefs[0], &filter60Hz_state[0]);
-	arm_biquad_cascade_df1_init_f32(&filter170Hz_settings, 1, &filter170Hz_coefs[0], &filter170Hz_state[0]);
-	arm_biquad_cascade_df1_init_f32(&filter350Hz_settings, 1, &filter350Hz_coefs[0], &filter350Hz_state[0]);
+	arm_biquad_cascade_df1_init_f32(&filter32Hz_settings, 1, &filter32Hz_coefs[0], &filter32Hz_state[0]);
+	arm_biquad_cascade_df1_init_f32(&filter64Hz_settings, 1, &filter64Hz_coefs[0], &filter64Hz_state[0]);
+	arm_biquad_cascade_df1_init_f32(&filter125Hz_settings, 1, &filter125Hz_coefs[0], &filter125Hz_state[0]);
+	arm_biquad_cascade_df1_init_f32(&filter250Hz_settings, 1, &filter250Hz_coefs[0], &filter250Hz_state[0]);
+	arm_biquad_cascade_df1_init_f32(&filter500Hz_settings, 1, &filter500Hz_coefs[0], &filter500Hz_state[0]);
 	arm_biquad_cascade_df1_init_f32(&filter1000Hz_settings, 1, &filter1000Hz_coefs[0], &filter1000Hz_state[0]);
-	arm_biquad_cascade_df1_init_f32(&filter3500Hz_settings, 1, &filter3500Hz_coefs[0], &filter3500Hz_state[0]);
-	arm_biquad_cascade_df1_init_f32(&filter10000Hz_settings, 1, &filter10000Hz_coefs[0], &filter10000Hz_state[0]);
+	arm_biquad_cascade_df1_init_f32(&filter2000Hz_settings, 1, &filter2000Hz_coefs[0], &filter2000Hz_state[0]);
+	arm_biquad_cascade_df1_init_f32(&filter4000Hz_settings, 1, &filter4000Hz_coefs[0], &filter4000Hz_state[0]);
+	arm_biquad_cascade_df1_init_f32(&filter8000Hz_settings, 1, &filter8000Hz_coefs[0], &filter8000Hz_state[0]);
+	arm_biquad_cascade_df1_init_f32(&filter16000Hz_settings, 1, &filter16000Hz_coefs[0], &filter16000Hz_state[0]);
 
 	GPIO_InitTypeDef  GPIO_InitStructure;
 	// SysTick interrupt each 1ms
 	RCC_GetClocksFreq(&RCC_Clocks);
 	SysTick_Config(RCC_Clocks.HCLK_Frequency / 1000);
+
 
 	// GPIOD Peripheral clock enable
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);
@@ -359,10 +440,9 @@ static void play_mp3(char* filename) {
 		Delay(200);
 		InitializeAudio(Audio44100HzSettings);
 
-
 		SetAudioVolume(0xAF);
 		PlayAudioWithCallback(AudioCallback, 0);
-		SetAudioVolume(200);
+		SetAudioVolume(205);
 
 		for(;;) {
 			/*
@@ -378,7 +458,6 @@ static void play_mp3(char* filename) {
 
 			// Process received UART commands asynchronously
 			processUARTPacket();
-			//ProcessUARTCommand();
 
 			if (bytes_left < (FILE_READ_BUFFER_SIZE / 2)) {
 				// Copy rest of data to beginning of read buffer
@@ -399,7 +478,7 @@ static void play_mp3(char* filename) {
 					StopAudio();
 
 					// Re-initialize and set volume to avoid noise
-					InitializeAudio(Audio44100HzSettings);
+					InitializeAudio(Audio48000HzSettings);
 					SetAudioVolume(0);
 
 					// Close currently open file
@@ -476,20 +555,32 @@ static void AudioCallback(void *context, int buffer) {
 	if (!outOfData) {
 		// Converting all samples to float
 		for (int i = 0; i < BLOCK_SIZE_FLOAT; i++) {
-			buf_in[i] = (float)samples[i];
+				buf_in[i] = (float)samples[i];
 		}
 
-		arm_biquad_cascade_df1_f32(&filter60Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
-		arm_biquad_cascade_df1_f32(&filter170Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
-		arm_biquad_cascade_df1_f32(&filter350Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
-		arm_biquad_cascade_df1_f32(&filter1000Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
-		arm_biquad_cascade_df1_f32(&filter3500Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
-		arm_biquad_cascade_df1_f32(&filter10000Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
+		arm_biquad_cascade_df1_f32(&filter32Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
 
+		arm_biquad_cascade_df1_f32(&filter64Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
+
+		arm_biquad_cascade_df1_f32(&filter125Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
+
+		arm_biquad_cascade_df1_f32(&filter250Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
+
+		arm_biquad_cascade_df1_f32(&filter500Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
+
+		arm_biquad_cascade_df1_f32(&filter1000Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
+
+		arm_biquad_cascade_df1_f32(&filter2000Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
+
+		arm_biquad_cascade_df1_f32(&filter4000Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
+
+		arm_biquad_cascade_df1_f32(&filter8000Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
+
+		arm_biquad_cascade_df1_f32(&filter16000Hz_settings, &buf_in[0], &buf_in[0], BLOCK_SIZE_FLOAT);
 
 		// Converting samples back to int
 		for (int i = 0; i < BLOCK_SIZE_FLOAT; i++) {
-			samples[i] = (int)buf_in[i];
+			samples[i] = (int)(buf_in[i] * 0.05);
 		}
 
 		// Send buffer to codec for playing

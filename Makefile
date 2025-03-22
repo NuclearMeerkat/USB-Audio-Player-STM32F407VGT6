@@ -10,6 +10,9 @@ SRCS += usbh_usr.c usb_bsp.c
 #UART
 SRCS += stm32_ub_uart.c
 
+#Filter stereo
+SRCS += arm_biquad_cascade_stereo_df2T_f32.c arm_biquad_cascade_stereo_df2T_init_f32.c
+
 # Project name
 PROJ_NAME=stm32F4_usb_mp3
 OUTPATH=build

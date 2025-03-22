@@ -248,6 +248,7 @@
 /**
  * @defgroup groupExamples Examples
  */
+#include "stm32f4xx.h"
 #ifndef _ARM_MATH_H
 #define _ARM_MATH_H
 

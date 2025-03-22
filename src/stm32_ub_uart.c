@@ -67,6 +67,7 @@ void UB_Uart_Init(void)
   USART_InitTypeDef USART_InitStructure;
   NVIC_InitTypeDef NVIC_InitStructure;
   UART_NAME_t nr;
+  USART_ClockInitTypeDef USART_ClockInitStruct;
 
   for(nr=0;nr<UART_ANZ;nr++) {
 
@@ -113,6 +114,8 @@ void UB_Uart_Init(void)
     // ��������� UART
     USART_Cmd(UART[nr].UART, ENABLE);
 
+    USART_ClockStructInit(&USART_ClockInitStruct);
+    USART_ClockInit(UART[nr].UART, &USART_ClockInitStruct);
     // RX-���������� ��������
     USART_ITConfig(UART[nr].UART, USART_IT_RXNE, ENABLE);
 
