@@ -478,7 +478,7 @@ static void play_mp3(char* filename) {
 					StopAudio();
 
 					// Re-initialize and set volume to avoid noise
-					InitializeAudio(Audio48000HzSettings);
+					InitializeAudio(Audio44100HzSettings);
 					SetAudioVolume(0);
 
 					// Close currently open file
