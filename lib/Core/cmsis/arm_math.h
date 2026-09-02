@@ -248,6 +248,7 @@
 /**
  * @defgroup groupExamples Examples
  */
+#include "stm32f4xx.h"
 #ifndef _ARM_MATH_H
 #define _ARM_MATH_H
 
@@ -260,7 +261,7 @@
 #elif defined (ARM_MATH_CM0)
   #include "core_cm0.h"
 #else
-#include "ARMCM4.h"
+//#include "ARMCM4.h"
 #warning "Define either ARM_MATH_CM4 OR ARM_MATH_CM3...By Default building on ARM_MATH_CM4....."
 #endif
 

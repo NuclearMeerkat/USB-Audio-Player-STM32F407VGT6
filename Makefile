@@ -7,6 +7,12 @@ SRCS += Audio.c
 # USB
 SRCS += usbh_usr.c usb_bsp.c
 
+#UART
+SRCS += stm32_ub_uart.c
+
+#Filter stereo
+SRCS += arm_biquad_cascade_stereo_df2T_f32.c arm_biquad_cascade_stereo_df2T_init_f32.c
+
 # Project name
 PROJ_NAME=stm32F4_usb_mp3
 OUTPATH=build
@@ -57,9 +63,11 @@ LIBPATHS = -Llib/StdPeriph -Llib/USB_OTG
 LIBPATHS += -Llib/USB_Host/Core -Llib/USB_Host/Class/MSC
 LIBPATHS += -Llib/fat_fs
 LIBPATHS += -Llib/helix
+LIBPATHS += -LCompiledLibs
+
 
 # Libraries to link
-LIBS = -lm -lhelix -lfatfs -lstdperiph -lusbhostcore -lusbhostmsc -lusbcore
+LIBS = -lm -lhelix -lfatfs -lstdperiph -lusbhostcore -lusbhostmsc -lusbcore -larm_cortexM4lf_math
 
 # Extra includes
 CFLAGS += -Ilib/StdPeriph/inc
